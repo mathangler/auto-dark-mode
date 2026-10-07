@@ -1,0 +1,112 @@
+name: build-and-release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write # required to create/update the Release and upload assets
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend dependencies
+        working-directory: frontend
+        shell: pwsh
+        run: npm ci --no-audit --no-fund
+
+      - name: Vet and test
+        shell: pwsh
+        run: |
+          go vet ./...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go test ./... -count=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Install Wails CLI
+        shell: pwsh
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+
+      - name: Ensure NSIS (installer toolchain)
+        shell: pwsh
+        run: |
+          $nsisDir = Join-Path ${env:ProgramFiles(x86)} 'NSIS'
+          $makensis = Join-Path $nsisDir 'makensis.exe'
+          if (-not (Test-Path $makensis)) {
+            Write-Host 'NSIS not present - installing via Chocolatey...'
+            choco install nsis -y --no-progress
+          }
+          if (-not (Test-Path $makensis)) { throw "NSIS still missing at $makensis" }
+          $nsisDir >> $env:GITHUB_PATH
+          Write-Host "NSIS ok: $makensis"
+
+      - name: Read version from version.go
+        id: version
+        shell: pwsh
+        run: |
+          $m = Select-String -Path version.go -Pattern 'const Version = "([^"]+)"'
+          if (-not $m) { throw 'version.go: "const Version" not found' }
+          $v = $m.Matches[0].Groups[1].Value
+          Write-Host "version = $v"
+          "VERSION=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Build portable exe + NSIS installer
+        shell: pwsh
+        run: |
+          $wails = Join-Path (go env GOPATH) 'bin\wails.exe'
+          & $wails build -nsis
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem build/bin | Select-Object Name, Length | Format-Table -AutoSize | Out-String | Write-Host
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: autodark-v${{ steps.version.outputs.VERSION }}
+          path: |
+            build/bin/autodark.exe
+            build/bin/autodark-amd64-installer.exe
+          if-no-files-found: error
+
+      - name: Publish / update Release (portable + installer attached)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $v = "${{ steps.version.outputs.VERSION }}"
+          $repo = "${{ github.repository }}"
+          $tag = "v$v"
+          $assets = @('build/bin/autodark.exe', 'build/bin/autodark-amd64-installer.exe')
+          foreach ($a in $assets) { if (-not (Test-Path $a)) { throw "missing artifact: $a" } }
+          $notes = "Auto Dark Mode $tag`n`nAssets:`n- ``autodark.exe`` - portable single-file build (no installation needed)`n- ``autodark-amd64-installer.exe`` - NSIS installer (per-machine install, optional)`n`nBuilt automatically from ``main`` (${{ github.sha }})." + "`n`nChange history: docs/VERSIONING.md | Diagnostics: docs/LOGGING.md"
+          gh release view $tag --repo $repo *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $tag already exists -> replacing assets"
+            gh release upload $tag $assets --clobber --repo $repo
+            gh release edit $tag --title "Auto Dark Mode $tag" --notes $notes --repo $repo
+          } else {
+            gh release create $tag --title "Auto Dark Mode $tag" --notes $notes $assets --repo $repo
+          }
+          if ($LASTEXITCODE -ne 0) { throw "publishing release $tag failed" }
+          Write-Host "Release: https://github.com/$repo/releases/tag/$tag"

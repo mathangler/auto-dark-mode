@@ -1,0 +1,16 @@
+# Normalize line endings in the repository to LF, but keep Windows-only
+# scripts in CRLF (batch files in particular misbehave when stored as LF).
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.nsh text eol=crlf
+
+# binaries (never touched by text normalization)
+*.exe binary
+*.dll binary
+*.syso binary
+*.ico binary
+*.png binary
+*.woff binary
+*.woff2 binary

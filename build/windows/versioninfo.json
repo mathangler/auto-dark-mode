@@ -1,0 +1,37 @@
+{
+  "FixedFileInfo": {
+    "FileVersion": {
+      "Major": 1,
+      "Minor": 2,
+      "Patch": 0,
+      "Build": 0
+    },
+    "ProductVersion": {
+      "Major": 1,
+      "Minor": 2,
+      "Patch": 0,
+      "Build": 0
+    },
+    "FileFlagsMask": "3f",
+    "FileOS": "040004",
+    "FileType": "01",
+    "FileSubType": "00"
+  },
+  "StringFileInfo": {
+    "Comments": "Automatic system dark / light mode switcher",
+    "CompanyName": "AutoDarkMode",
+    "FileDescription": "Auto Dark Mode",
+    "FileVersion": "1.2.0.0",
+    "InternalName": "autodark.exe",
+    "LegalCopyright": "Copyright © 2026",
+    "OriginalFilename": "autodark.exe",
+    "ProductName": "Auto Dark Mode",
+    "ProductVersion": "1.2.0"
+  },
+  "VarFileInfo": {
+    "Translation": {
+      "LangID": "0409",
+      "CharsetID": "04B0"
+    }
+  }
+}

@@ -1,0 +1,16 @@
+# build outputs
+build/bin
+build/windows/installer/tmp
+frontend/dist
+
+# dependencies
+node_modules
+
+# wails generated/transient files
+# (package.json.md5 records the last dependency install; committing it can make
+#  the dependency install be SKIPPED on a fresh CI checkout, so keep it out)
+frontend/package.json.md5
+*.syso
+
+# runtime/local noise
+*.log
