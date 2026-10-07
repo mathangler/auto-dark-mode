@@ -1,7 +1,8 @@
 # build outputs
 build/bin
 build/windows/installer/tmp
-frontend/dist
+frontend/dist/*
+!frontend/dist/.gitkeep
 
 # dependencies
 node_modules

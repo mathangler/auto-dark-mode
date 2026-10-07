@@ -1,0 +1,6 @@
+The frontend bundle itself is a build artifact and is never committed, but the
+directory has to exist in a fresh clone: main.go embeds it with
+`//go:embed all:frontend/dist`, and an embed pattern with no matching file
+fails the build. `go vet`/`go test` therefore could not compile the package in
+CI until this placeholder was tracked. The real bundle is written here by the
+frontend build (vite) before the Go build runs.
