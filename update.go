@@ -39,6 +39,7 @@ type UpdateInfo struct {
 	ReleaseURL string `json:"releaseUrl"`
 	AssetName  string `json:"assetName"`
 	AssetURL   string `json:"assetUrl"`
+	AssetID    int64  `json:"-"`
 	Size       int64  `json:"size"`
 	Progress   int    `json:"progress"`
 	Error      string `json:"error"`
@@ -53,6 +54,7 @@ type ghRelease struct {
 	HTMLURL     string `json:"html_url"`
 	PublishedAt string `json:"published_at"`
 	Assets      []struct {
+		ID                 int64  `json:"id"`
 		Name               string `json:"name"`
 		Size               int64  `json:"size"`
 		BrowserDownloadURL string `json:"browser_download_url"`
@@ -180,6 +182,7 @@ func fetchLatestRelease(current string) (UpdateInfo, error) {
 	if pick >= 0 {
 		info.AssetName = rel.Assets[pick].Name
 		info.AssetURL = rel.Assets[pick].BrowserDownloadURL
+		info.AssetID = rel.Assets[pick].ID
 		info.Size = rel.Assets[pick].Size
 	}
 
@@ -242,6 +245,33 @@ func (a *App) DownloadUpdate() error {
 }
 
 func downloadAsset(info UpdateInfo, onProgress func(int)) error {
+	// The release page URL (github.com) is the canonical download, but on some
+	// networks that host is unreachable while api.github.com works. The API
+	// asset endpoint serves the same bytes, so try it as a fallback.
+	urls := []string{info.AssetURL}
+	if info.AssetID > 0 {
+		urls = append(urls, fmt.Sprintf("https://api.github.com/repos/mathangler/auto-dark-mode/releases/assets/%d", info.AssetID))
+	}
+	var lastErr error
+	for _, u := range urls {
+		if u == "" {
+			continue
+		}
+		if err := downloadFrom(u, info, onProgress); err != nil {
+			lastErr = err
+			diagLog("update: download attempt failed via %s: %v", u, err)
+			onProgress(0)
+			continue
+		}
+		return nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("没有可用的下载地址")
+	}
+	return lastErr
+}
+
+func downloadFrom(url string, info UpdateInfo, onProgress func(int)) error {
 	dir := filepath.Join(os.TempDir(), "AutoDarkModeUpdate")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -249,11 +279,13 @@ func downloadAsset(info UpdateInfo, onProgress func(int)) error {
 	dest := filepath.Join(dir, filepath.Base(info.AssetName))
 
 	client := &http.Client{Timeout: 0} // large file: rely on the request context
-	req, err := http.NewRequest(http.MethodGet, info.AssetURL, nil)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("User-Agent", "AutoDarkMode/"+Version)
+	// Ask the API endpoint for the raw bytes (ignored by the CDN URL).
+	req.Header.Set("Accept", "application/octet-stream")
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("下载失败：%v", err)
