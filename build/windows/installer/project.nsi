@@ -1,4 +1,4 @@
-Unicode true
+﻿Unicode true
 
 ####
 ## Please note: Template replacements don't work in this file. They are provided with default defines like
@@ -139,7 +139,11 @@ FunctionEnd
     Abort # user chose Cancel: leave the installer
     close_running:
     DetailPrint "$(MsgClosingProcess)"
-    nsExec::Exec `"$SYSDIR\taskkill.exe" /F /T /IM "${PRODUCT_EXECUTABLE}"`
+    # No /T here. The in-app updater runs this installer from a helper process
+    # that descends from the app, and /T would kill that whole tree — including
+    # this installer — before a single file is copied. Killing only the app is
+    # enough to release the exe, and it lets the updater finish and relaunch.
+    nsExec::Exec `"$SYSDIR\taskkill.exe" /F /IM "${PRODUCT_EXECUTABLE}"`
     Pop $0 # taskkill exit code (ignored: the loop re-checks instead)
     Sleep 500 # give the OS a moment to release the file handles
     Goto check_running
@@ -167,12 +171,21 @@ Section
     !insertmacro wails.writeUninstaller
 SectionEnd
 
+# Silent installs (/S, used by the updater) never show the MUI finish page, so
+# its "run the app" option does not fire. Start the app explicitly instead —
+# this also rescues older builds whose updater helper died before relaunching.
+Function .onInstSuccess
+    ${If} ${Silent}
+        Exec '"$INSTDIR\${PRODUCT_EXECUTABLE}"'
+    ${EndIf}
+FunctionEnd
+
 Section "uninstall"
     !insertmacro wails.setShellContext
 
     # No prompt here — the user already decided to uninstall. Close the app
     # and wait a moment so its files can be removed.
-    nsExec::Exec `"$SYSDIR\taskkill.exe" /F /T /IM "${PRODUCT_EXECUTABLE}"`
+    nsExec::Exec `"$SYSDIR\taskkill.exe" /F /IM "${PRODUCT_EXECUTABLE}"`
     Pop $0
     Sleep 500
 
