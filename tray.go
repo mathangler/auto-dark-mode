@@ -505,11 +505,11 @@ func showTrayMenu(hwnd windows.Handle) {
 	case actionOpen:
 		app.ShowWindow()
 	case actionDark:
-		app.SetManualTheme("dark")
+		app.setManualTheme("dark", true)
 	case actionLight:
-		app.SetManualTheme("light")
+		app.setManualTheme("light", true)
 	case actionAuto:
-		app.SetManualTheme("auto")
+		app.setManualTheme("auto", true)
 	case actionQuit:
 		forceExit = true
 		runtime.Quit(app.ctx)

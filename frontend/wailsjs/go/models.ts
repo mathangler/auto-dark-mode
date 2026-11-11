@@ -31,6 +31,7 @@ export namespace main {
 	    manualTheme: string;
 	    lang: string;
 	    closeToTray: boolean;
+	    autoUpdateCheck: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Config(source);
@@ -50,6 +51,7 @@ export namespace main {
 	        this.manualTheme = source["manualTheme"];
 	        this.lang = source["lang"];
 	        this.closeToTray = source["closeToTray"];
+	        this.autoUpdateCheck = source["autoUpdateCheck"];
 	    }
 	}
 	export class LocationResult {
@@ -74,6 +76,38 @@ export namespace main {
 	        this.error = source["error"];
 	    }
 	}
+	export class UpdateInfo {
+	    state: string;
+	    current: string;
+	    latest: string;
+	    notes: string;
+	    releaseUrl: string;
+	    assetName: string;
+	    assetUrl: string;
+	    size: number;
+	    progress: number;
+	    error: string;
+	    published: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new UpdateInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.state = source["state"];
+	        this.current = source["current"];
+	        this.latest = source["latest"];
+	        this.notes = source["notes"];
+	        this.releaseUrl = source["releaseUrl"];
+	        this.assetName = source["assetName"];
+	        this.assetUrl = source["assetUrl"];
+	        this.size = source["size"];
+	        this.progress = source["progress"];
+	        this.error = source["error"];
+	        this.published = source["published"];
+	    }
+	}
 	export class State {
 	    enabled: boolean;
 	    mode: string;
@@ -90,6 +124,8 @@ export namespace main {
 	    closeToTray: boolean;
 	    lang: string;
 	    lastError?: string;
+	    backdrop: string;
+	    update: UpdateInfo;
 	
 	    static createFrom(source: any = {}) {
 	        return new State(source);
@@ -112,6 +148,8 @@ export namespace main {
 	        this.closeToTray = source["closeToTray"];
 	        this.lang = source["lang"];
 	        this.lastError = source["lastError"];
+	        this.backdrop = source["backdrop"];
+	        this.update = this.convertValues(source["update"], UpdateInfo);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

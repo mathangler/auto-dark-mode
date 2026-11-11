@@ -26,6 +26,8 @@ runtime, which ships with Windows 10/11.
 - **Minimize to tray on close** — closing the window hides to the tray instead of quitting (default on; use tray "Quit" to fully exit).
 - **Bilingual (中文 / English)** — follows the system language with a manual override; covers the settings UI, tray menu and status messages.
 - **Settings UI follows the OS theme** — the settings window matches the dark/light mode it drives.
+- **Liquid Glass UI** — a translucent Acrylic window with frosted cards, a sun/moon arc that tracks the current position in the day (or night), and spring-animated controls.
+- **Automatic updates** — checks the newest GitHub release at startup and every 6 hours, downloads the installer with a live progress bar, then installs it silently and restarts. The installer is per-user, so no administrator prompt appears.
 - Settings window (Golang backend + vanilla JS UI), config persisted as JSON.
 
 The in-app scheduler checks the clock every 30 seconds, so even during sleep/resume

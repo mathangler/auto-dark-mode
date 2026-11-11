@@ -56,6 +56,14 @@ func solarDesired(sunrise, sunset time.Time, now time.Time) (string, error) {
 		}
 		return "dark", nil
 	}
+	// Sunrise is later in the (local) day than sunset — this happens whenever
+	// the selected location's solar day crosses local midnight (e.g. New York
+	// seen from a Beijing clock: rise 19:00, set 07:00). Daylight then runs
+	// from sunrise to midnight and from midnight to sunset; the old code
+	// treated this as permanent night, so such a location stayed dark all day.
+	if cur >= sr || cur < ss {
+		return "light", nil
+	}
 	return "dark", nil
 }
 

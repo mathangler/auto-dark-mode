@@ -66,6 +66,12 @@ type State struct {
 	CloseToTray    bool           `json:"closeToTray"`
 	Lang           string         `json:"lang"`
 	LastError      string         `json:"lastError,omitempty"`
+	// Backdrop is "acrylic" when the DWM system backdrop is actually painting
+	// behind the translucent window, "none" when the UI must paint its own
+	// opaque gradient (Windows 10, transparency effects off, old builds).
+	Backdrop string `json:"backdrop"`
+	// Update is the latest known updater state (see update.go).
+	Update UpdateInfo `json:"update"`
 }
 
 // NewApp creates the application struct.
@@ -77,6 +83,11 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.cfg = loadConfig()
+	// Persist the normalized config so a hand-edited/legacy file (e.g. an
+	// unknown "mode") is healed on disk, not only in memory.
+	if err := a.cfg.save(); err != nil {
+		diagLog("startup: could not rewrite normalized config: %v", err)
+	}
 	a.resolvedOnce = false
 	a.stopCh = make(chan struct{})
 	diagLog("startup: version=%s mode=%s enabled=%v manual=%s darkStart=%s lightStart=%s",
@@ -92,6 +103,12 @@ func (a *App) startup(ctx context.Context) {
 		a.setAutoStart(false)
 	}
 	startupLog("startup ok, exe=" + exePath())
+
+	// Verify the DWM Acrylic backdrop once the window exists (the result is
+	// pushed to the UI through State.Backdrop).
+	go probeWindowBackdrop(a)
+	// Quiet update check: first pass shortly after startup, then periodic.
+	go a.autoCheckUpdates()
 
 	// NEVER run the first tick synchronously here: OnStartup executes on the
 	// Wails main loop, which also serves the window assets and the JS
@@ -627,21 +644,7 @@ func (a *App) GetConfig() Config {
 
 // SaveConfig validates and persists the given settings, then re-applies.
 func (a *App) SaveConfig(cfg Config) error {
-	if cfg.DarkStart == "" {
-		cfg.DarkStart = "19:00"
-	}
-	if cfg.LightStart == "" {
-		cfg.LightStart = "07:00"
-	}
-	if cfg.ManualTheme == "" {
-		cfg.ManualTheme = ThemeAuto
-	}
-	if cfg.LocationSource == "" {
-		cfg.LocationSource = SourceAuto
-	}
-	if cfg.Mode == "" {
-		cfg.Mode = ModeSolar
-	}
+	cfg = normalizeConfig(cfg)
 	a.mu.Lock()
 	prev := a.cfg
 	a.cfg = cfg
@@ -733,7 +736,19 @@ func (a *App) SetAutoStart(enabled bool) error {
 }
 
 // SetManualTheme forces dark/light, or "auto" to resume the schedule.
+// SetManualTheme is the settings-UI entry point. Unlike the tray's "force"
+// items it must never run a flip heal: clicking the theme that is already
+// active used to write the opposite theme for 3s (the taskbar visibly turned
+// white) and its late step-2 write also swallowed a following "automatic"
+// click. A UI click that matches the current theme only re-delivers.
 func (a *App) SetManualTheme(theme string) error {
+	return a.setManualTheme(theme, false)
+}
+
+// setManualTheme is shared with the tray. forceHeal=true keeps the tray's
+// "Force dark/light" semantics: an explicit heal of a stuck shell, which is
+// allowed to do the real 3s flip even when the registry already matches.
+func (a *App) setManualTheme(theme string, forceHeal bool) error {
 	if theme != "auto" && theme != "dark" && theme != "light" {
 		return fmt.Errorf(T(a.lang(), "err.invalidTheme"), theme)
 	}
@@ -741,14 +756,52 @@ func (a *App) SetManualTheme(theme string) error {
 	a.cfg.ManualTheme = ManualTheme(theme)
 	cfg := a.cfg
 	a.mu.Unlock()
-	diagLog("user: manualTheme -> %s [%s]", theme, themeSnapshot())
+	diagLog("user: manualTheme -> %s (forceHeal=%v) [%s]", theme, forceHeal, themeSnapshot())
 	if err := cfg.save(); err != nil {
 		return err
 	}
-	// Always force a re-apply (even when the mode didn't change) so this also
-	// heals a shell that missed an earlier theme notification.
-	a.forceApplyTheme()
+	a.applyManualTheme(forceHeal)
 	return nil
+}
+
+// applyManualTheme applies the active manual theme (or the schedule in auto)
+// without flipping unless a heal was explicitly requested.
+func (a *App) applyManualTheme(forceHeal bool) {
+	cfg := a.GetConfig()
+	target := string(cfg.ManualTheme)
+	if cfg.ManualTheme == ThemeAuto {
+		target = ""
+		if cfg.Enabled {
+			if t, err := a.desiredTheme(time.Now()); err == nil {
+				target = t
+			}
+		}
+	}
+	if target == "" {
+		if forceHeal {
+			flipHealTheme(currentThemeIsDark())
+		} else {
+			reapplyCurrentTheme()
+		}
+		a.emitState()
+		return
+	}
+	dark := target == "dark"
+	if currentThemeIsDark() == dark {
+		if forceHeal {
+			flipHealTheme(dark)
+		} else {
+			// Already correct: refresh the shell's delivery only. No registry
+			// write, so nothing can flash and no late write can race.
+			diagLog("ui: target already active dark=%v -> re-broadcast only", dark)
+			refreshImmersiveColorPolicyState()
+			broadcastThemeChange()
+			go pokeTaskbar()
+		}
+	} else {
+		applyTheme(dark)
+	}
+	a.emitState()
 }
 
 // forceApplyTheme re-applies the active theme at user request (tray menu or
@@ -860,6 +913,8 @@ func (a *App) buildState() State {
 		Lang:         effectiveLang(cfg),
 		Location:     a.currentLocation(),
 		LastError:    le,
+		Backdrop:     currentBackdrop(),
+		Update:       a.GetUpdateInfo(),
 	}
 	if target, err := a.desiredTheme(now); err != nil {
 		st.LastError = err.Error()

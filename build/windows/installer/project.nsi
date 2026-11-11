@@ -1,4 +1,4 @@
-﻿Unicode true
+Unicode true
 
 ####
 ## Please note: Template replacements don't work in this file. They are provided with default defines like
@@ -32,6 +32,14 @@
 ####
 ## Include the wails tools
 ####
+# Per-user install (no elevation): required so the in-app updater can run the
+# installer silently. Machine-wide installs would raise a UAC prompt after the
+# app already quit, which looks like a failed update. Defining the scope here
+# (rather than passing -installscope) keeps the CI command unchanged; wails
+# only injects -DWAILS_INSTALL_SCOPE when the flag is given, so there is no
+# duplicate-define conflict.
+!define WAILS_INSTALL_SCOPE "user"
+!define REQUEST_EXECUTION_LEVEL "user"
 !include "wails_tools.nsh"
 
 # The version information for this two must consist of 4 parts

@@ -247,6 +247,29 @@ var (
 	flipQueuedDark bool
 )
 
+// themeGen invalidates in-flight flip heals. Every direct apply bumps it; a
+// flip captures it when it starts and skips its final write if a newer apply
+// happened during the 3s dwell. Without this, clicking "automatic" right after
+// a flip could be undone by the flip's late step-2 write (the UI looked stuck).
+var (
+	themeGenMu sync.Mutex
+	themeGen   uint64
+)
+
+func bumpThemeGen() uint64 {
+	themeGenMu.Lock()
+	themeGen++
+	g := themeGen
+	themeGenMu.Unlock()
+	return g
+}
+
+func themeGenNow() uint64 {
+	themeGenMu.Lock()
+	defer themeGenMu.Unlock()
+	return themeGen
+}
+
 // flipActive reports whether a flip heal is in flight. While it is, the
 // scheduler must not write the theme itself: it would race the flip's
 // intermediate (opposite) value and can leave the shell between themes.
@@ -280,11 +303,12 @@ func flipHealTheme(dark bool) {
 		return
 	}
 	flipRunning = true
+	gen := bumpThemeGen()
 	flipMu.Unlock()
 	diagLog("flip: START dark=%v (system-side round trip, dwell %s)", dark, flipHealPause)
 
 	go func() {
-		runFlip(dark)
+		runFlip(dark, gen)
 
 		flipMu.Lock()
 		rerun := flipQueued
@@ -309,7 +333,7 @@ func flipHealTheme(dark bool) {
 // whole-desktop flash. The pause between the two writes uses the
 // sleep-aware wait so a machine that falls asleep mid-heal doesn't wake up
 // hours later with the registry still parked on the opposite value.
-func runFlip(dark bool) {
+func runFlip(dark bool, gen uint64) {
 	if err := writeSystemThemeValues(!dark); err != nil {
 		diagLog("flip: step1 (opposite) write FAILED, skipping dwell: %v", err)
 	} else {
@@ -318,6 +342,10 @@ func runFlip(dark bool) {
 		notifyShell()
 		pokeTaskbar()
 		sleepForRuntime(flipHealPause)
+	}
+	if themeGenNow() != gen {
+		diagLog("flip: superseded by a newer apply during the dwell -> skipping step2")
+		return
 	}
 	if err := writeThemeValues(dark); err != nil {
 		diagLog("flip: step2 (target) write FAILED: %v", err)
@@ -467,11 +495,15 @@ func refreshShellTheme() {
 // idle again.
 func applyTheme(dark bool) error {
 	diagLog("applyTheme: begin dark=%v [%s]", dark, themeSnapshot())
+	// Any direct apply supersedes a flip that is still dwelling.
+	bumpThemeGen()
 	if err := writeThemeValues(dark); err != nil {
 		return err
 	}
 	refreshImmersiveColorPolicyState()
 	broadcastThemeChange()
+	// Keep the DWM frame material in the same light/dark mode.
+	applyBackdropTheme(dark)
 	// The targeted taskbar delivery can block seconds on a hung window, and
 	// this function also runs on the tray thread (via the tray's force-theme
 	// menu items) — so the poke runs on a goroutine, like the broadcast.

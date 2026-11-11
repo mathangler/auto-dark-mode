@@ -35,41 +35,45 @@ const (
 
 // Config is the persisted application settings.
 type Config struct {
-	Enabled      bool           `json:"enabled"`
-	Mode         Mode           `json:"mode"`
-	DarkStart    string         `json:"darkStart,omitempty"`  // "HH:MM", fixed mode
-	LightStart   string         `json:"lightStart,omitempty"` // "HH:MM", fixed mode
+	Enabled    bool   `json:"enabled"`
+	Mode       Mode   `json:"mode"`
+	DarkStart  string `json:"darkStart,omitempty"`  // "HH:MM", fixed mode
+	LightStart string `json:"lightStart,omitempty"` // "HH:MM", fixed mode
 
 	LocationSource LocationSource `json:"locationSource"`
 	Lat            float64        `json:"lat,omitempty"`
 	Lon            float64        `json:"lon,omitempty"`
 	City           string         `json:"city,omitempty"`
 
-	AutoStart  bool       `json:"autoStart"`
+	AutoStart   bool        `json:"autoStart"`
 	ManualTheme ManualTheme `json:"manualTheme"`
 
 	// Lang is "en", "zh", or "" to follow the system UI language.
 	Lang string `json:"lang"`
 	// CloseToTray hides the window to the tray instead of quitting on close.
 	CloseToTray bool `json:"closeToTray"`
+	// AutoUpdateCheck quietly asks GitHub for a newer release at startup and
+	// every few hours.
+	AutoUpdateCheck bool `json:"autoUpdateCheck"`
 
 	// Resolved location cache (not persisted directly; recalc each session).
-	resolvedLat     float64
-	resolvedLon     float64
-	resolvedSource  string
-	resolvedName    string
-	lastTransition  time.Time
+	resolvedLat    float64
+	resolvedLon    float64
+	resolvedSource string
+	resolvedName   string
+	lastTransition time.Time
 }
 
 func defaultConfig() Config {
 	return Config{
-		Enabled:        true,
-		Mode:           ModeSolar,
-		DarkStart:      "19:00",
-		LightStart:     "07:00",
-		LocationSource: SourceAuto,
-		ManualTheme:    ThemeAuto,
-		CloseToTray:    true,
+		Enabled:         true,
+		Mode:            ModeSolar,
+		DarkStart:       "19:00",
+		LightStart:      "07:00",
+		LocationSource:  SourceAuto,
+		ManualTheme:     ThemeAuto,
+		CloseToTray:     true,
+		AutoUpdateCheck: true,
 	}
 }
 
@@ -107,7 +111,34 @@ func loadConfig() Config {
 	if tmp.Mode == "" {
 		tmp.Mode = ModeSolar
 	}
-	return tmp
+	return normalizeConfig(tmp)
+}
+
+// normalizeConfig coerces every enum-like field to a known value. Configs can
+// arrive from a hand-edited file or from an older/newer UI, and an unknown
+// value used to break the schedule silently (e.g. mode "auto" made the app
+// treat the plan as neither solar nor fixed).
+func normalizeConfig(c Config) Config {
+	if c.Mode != ModeFixed {
+		c.Mode = ModeSolar
+	}
+	switch c.LocationSource {
+	case SourceManual, SourceCity:
+	default:
+		c.LocationSource = SourceAuto
+	}
+	switch c.ManualTheme {
+	case ThemeDark, ThemeLight:
+	default:
+		c.ManualTheme = ThemeAuto
+	}
+	if c.DarkStart == "" {
+		c.DarkStart = "19:00"
+	}
+	if c.LightStart == "" {
+		c.LightStart = "07:00"
+	}
+	return c
 }
 
 func (c *Config) save() error {
