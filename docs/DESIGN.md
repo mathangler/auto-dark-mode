@@ -1,6 +1,6 @@
 # Auto Dark Mode —— 设计、功能与使用文档
 
-> 版本：2.0.2 ｜ 平台：Windows 10/11（x64）｜ 技术栈：Go + Wails v2 + 原生 Vanilla JS
+> 版本：2.0.3 ｜ 平台：Windows 10/11（x64）｜ 技术栈：Go + Wails v2 + 原生 Vanilla JS
 
 ---
 

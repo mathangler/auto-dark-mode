@@ -7,7 +7,7 @@ package main
 // Do not edit by hand — bump with build\bump-version.ps1 -Patch|-Minor|-Major,
 // which syncs every version location at once. The rules, file inventory and
 // version history live in docs/VERSIONING.md.
-const Version = "2.0.2"
+const Version = "2.0.3"
 
 // GetVersion exposes the version to the settings UI (Wails binding).
 func (a *App) GetVersion() string {

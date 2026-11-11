@@ -372,9 +372,12 @@ func (a *App) InstallUpdate() error {
 	diagLog("update: installing %s", info.filePath)
 
 	helper := filepath.Join(os.TempDir(), "autodark-update.cmd")
+	logPath := filepath.Join(os.TempDir(), "autodark-update.log")
 	script := "@echo off\r\n" +
-		"timeout /t 2 /nobreak >nul\r\n" +
+		"echo [%date% %time%] helper start >> \"" + logPath + "\"\r\n" +
+		"ping -n 3 127.0.0.1 >nul\r\n" +
 		"\"" + info.filePath + "\" /S\r\n" +
+		"echo [%date% %time%] installer exit %ERRORLEVEL% >> \"" + logPath + "\"\r\n" +
 		"if exist \"%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Auto Dark Mode.lnk\" (\r\n" +
 		"  start \"\" \"%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Auto Dark Mode.lnk\"\r\n" +
 		") else (\r\n" +
@@ -385,8 +388,10 @@ func (a *App) InstallUpdate() error {
 		return err
 	}
 
-	cmd := exec.Command("cmd.exe", "/C", helper)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000} // CREATE_NO_WINDOW
+	// `start` detaches the helper from this process tree: spawning cmd directly
+	// made the child die together with the app, so the installer never ran.
+	cmd := exec.Command("cmd.exe", "/C", "start", "", "/MIN", helper)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x00000008} // DETACHED_PROCESS
 	if err := cmd.Start(); err != nil {
 		return err
 	}
@@ -414,6 +419,18 @@ func (a *App) autoCheckUpdates() {
 				if os.Getenv("AUTODARK_UPDATE_AUTODL") == "1" {
 					time.Sleep(2 * time.Second)
 					a.DownloadUpdate()
+					// Test hook: install as soon as the download completes.
+					if os.Getenv("AUTODARK_UPDATE_AUTOINSTALL") == "1" {
+						go func() {
+							for i := 0; i < 300; i++ {
+								time.Sleep(time.Second)
+								if a.GetUpdateInfo().State == "ready" {
+									a.InstallUpdate()
+									return
+								}
+							}
+						}()
+					}
 				}
 			}
 		}
