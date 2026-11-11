@@ -298,6 +298,11 @@ function applyLanguage(effective) {
 
     renderHero();
     if (status) renderStatus();
+    // The updater line is composed from translated fragments (not a plain
+    // data-i18n node), so re-render it from the cached state on a language
+    // change; otherwise it stayed in the previous language until the next
+    // update event.
+    if (updateInfo) renderUpdate(updateInfo);
     // Button labels may have changed width (zh vs en): re-measure the pills.
     requestAnimationFrame(layoutAllSegs);
 }
